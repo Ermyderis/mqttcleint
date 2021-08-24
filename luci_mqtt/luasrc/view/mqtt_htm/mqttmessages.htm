@@ -1,0 +1,62 @@
+<%-
+local sqlite = require "lsqlite3"
+local dbFilePath = "/log/mqttmessages.db"
+local sys = require "luci.sys"
+message_list = {}
+
+local db = sqlite.open(dbFilePath)
+local query = "SELECT * FROM Messages"
+if db:prepare(query) then
+    for row in db:nrows(query) do
+        message_list[#message_list+1] = row
+    end
+end
+db:close()
+
+-%>
+
+<h3 class="content-title" onclick="toggleContent(this, '<%=self.config%>.<%=self.sectiontype%>.toggle')">
+    <div class="toggle-arrow expanded"><img src="<%=media%>/img/icons/arrow-toggle.svg"></div>
+    <span>Subscribed Messages</span>
+</h3>
+
+
+    <head>
+        <title> Subscribed Messages </title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+        <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
+      </head>
+      <body>
+      
+      <div class="container">
+        <h2>Message Table</h2>      
+        <table class="table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Topic</th>
+              <th>Message</th>
+              <th>Time</th>
+            </tr>
+        </thead>
+          </thead>
+          <tbody>
+            <% for i=1,#message_list do %>
+                <tr>
+                    <td ><%=message_list[i].id%></td>
+                    <td ><%=message_list[i].Topic%></td>
+                    <td ><%=message_list[i].Message%></td>
+                    <td ><%=message_list[i].Time%></td>
+                </tr>
+            <% end %>
+        </tbody>
+        </table>
+      </div>
+      
+      </body>
+
+<br>
+

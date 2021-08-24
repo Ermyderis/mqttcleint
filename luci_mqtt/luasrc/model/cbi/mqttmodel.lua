@@ -4,7 +4,7 @@ local s, s2, m
 
 m = Map("mqttconfig")
 
-section = m:section(NamedSection, "mqttconfig_sct", "mqttconfig", "Subscribe info")
+section = m:section(NamedSection, "mqttconfigsct", "mqttconfig", "Subscribe info")
 
 flag = section:option(Flag, "enable", "Enable", "Enable program")
 
@@ -30,7 +30,7 @@ password.datatype = "credentials_validate"
 password.placeholder = translate("Password")
 
 
-tls_ssl = section:option(Flag, "enable", "TSL_SSL", "Enable program use TSL_SSL")
+tls_ssl = section:option(Flag, "enabletsl", "TSL_SSL", "Enable program use TSL_SSL")
 
 
 ---------------------------- Topic ----------------------------
