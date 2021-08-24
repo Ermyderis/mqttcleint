@@ -9,6 +9,7 @@
 
 #define configfile "/etc/config/mqttconfig"
 #define databasefile "/log/mqttmessages.db"
+#define CERTPATH ""
 
 struct Node {
    char *data;
@@ -95,9 +96,18 @@ int main(void)
                 if (mosquitto_username_pw_set(mosq, configdata.ussername ,configdata.password)==MOSQ_ERR_SUCCESS){
                 syslog(LOG_INFO, "User name and password added successfuly\n");
                 printf("User name and password added successfuly\n");
+                    if (!mosquitto_tls_set(mosq,CERTPATH,NULL, NULL, NULL, NULL)== MOSQ_ERR_SUCCESS){ 
+                        syslog(LOG_WARNING, "Failed to set tls"); 
+                        printf("Failed to set tls\n");
+                        goto endOfTheProgram;
+                    }
+                    else{
+                        printf("Tsl seted");
+                    }
             }else{
                 syslog(LOG_WARNING, "Failed to add username or password\n");
                 printf("Failed to add username or password\n");
+                goto endOfTheProgram;
             }
         }
         else{
