@@ -23,15 +23,22 @@ struct Config{
     char *tsl;
 };
 
-void term_proc(int sigterm);
 void on_connect(struct mosquitto *mosq, void *obj, int rc);
 void on_message(struct mosquitto *mosq, void *obj, const struct mosquitto_message *msg);
 void remov_unvanted_character(char* string, char character);
 void get_topics(struct Node **head, struct Node *current);
 struct Config Get_values_from_config();
 void print_conf_values();
-volatile sig_atomic_t deamonize = 1;
+volatile int interrupt = 0;
 sqlite3 *data_base = NULL;
+
+
+void signal_handler(int signo) {
+    signal(SIGINT, NULL);
+    syslog(LOG_INFO, "Received signal: %d", signo);
+    closelog();
+    interrupt = 1;
+}
 
 
 int main(void)
@@ -44,16 +51,18 @@ int main(void)
     struct Node *tmp;
     struct Node *head = NULL;
     struct Node *current = NULL;
+
     
 	memset(&action, 0, sizeof(struct sigaction));
     memset(&configdata, 0, sizeof(struct Config));
 
-	action.sa_handler = term_proc;
+	signal(SIGINT, signal_handler);
+    signal(SIGTERM, signal_handler);
+    sigaction(SIGTERM, &action, NULL);
 
     get_topics(&head, current); 
     //testing
     print_conf_values();
-    mosq = mosquitto_new("subscribe-test", true, head);
 
     configdata = Get_values_from_config();
     if((configdata.address == NULL) || (configdata.port == NULL)){
@@ -61,7 +70,7 @@ int main(void)
     }
     
     //log opening
-    openlog("mqtt_app", LOG_PID, LOG_USER);
+    openlog("mqttapp", LOG_PID, LOG_USER);
     if (sqlite3_open(databasefile, &data_base) != 0){
         printf("Failed to open databse\n");
         syslog(LOG_ERR, "Failed to open databse\n");
@@ -69,12 +78,38 @@ int main(void)
     }
     else{
         printf("Database opened\n");
-        printf("BAndymas\n");
     }
-	mosquitto_lib_init();
+	rc = mosquitto_lib_init();
+    if (rc != 0){
+        syslog(LOG_ERR, "Failed to initialize mosquitto");
+        goto endOfTheProgram;
+    }
+    else{
+        syslog(LOG_INFO, "Mosquitto initialize");
+    }
+    mosq = mosquitto_new("subscribe-test", true, head);
+
+      if(configdata.tsl != NULL){
+        printf("TSL/SSL ON\n");
+        if(configdata.password != NULL && configdata.ussername != NULL){
+                if (mosquitto_username_pw_set(mosq, configdata.ussername ,configdata.password)==MOSQ_ERR_SUCCESS){
+                syslog(LOG_INFO, "User name and password added successfuly\n");
+                printf("User name and password added successfuly\n");
+            }else{
+                syslog(LOG_WARNING, "Failed to add username or password\n");
+                printf("Failed to add username or password\n");
+            }
+        }
+        else{
+            printf("Empty usr or pasw\n");
+            goto endOfTheProgram;
+        }
+    }
+
+
+
 	mosquitto_connect_callback_set(mosq, on_connect);
 	mosquitto_message_callback_set(mosq, on_message);
-	mosquitto_username_pw_set(mosq, NULL, NULL); //Seting pass and username
 	rc = mosquitto_connect(mosq, configdata.address, atoi(configdata.port), 10);
 	if(rc) {
 		printf("Could not connect to Broker with return code %d\n", rc);
@@ -82,12 +117,10 @@ int main(void)
 		goto endOfTheProgram;
 	}
     mosquitto_loop_start(mosq);
-    printf("Veikia1\n");
-	while(deamonize) {   
-        printf("Daemon working\n");
-        syslog(LOG_INFO, "Daemon working\n");
-        sleep(5);
+	while(!interrupt) {   
+        
 	}
+    printf("Closing\n");
     mosquitto_loop_stop(mosq, true);
 
     endOfTheProgram:
@@ -114,10 +147,6 @@ int main(void)
 	return rc;
 }
 ///////////// Main end
-void term_proc(int sigterm) 
-{
-	deamonize = 0;
-}
 
 void on_connect(struct mosquitto *mosq, void *obj, int rc) {
     struct Node *ptr = obj;
