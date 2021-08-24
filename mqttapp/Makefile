@@ -18,6 +18,7 @@ endef
 
 define Package/mqttapp/install
 	$(INSTALL_DIR) $(1)/usr/bin
+	$(INSTALL_DIR) $(1)/log
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) ./files/mqttapp.init $(1)/etc/init.d/mqttapp
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/mqttapp $(1)/usr/bin

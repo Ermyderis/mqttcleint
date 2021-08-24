@@ -7,6 +7,9 @@
 #include <mosquitto.h>
 #include <sqlite3.h>
 
+#define configfile "/etc/config/mqttconfig"
+#define databasefile "/log/mqttmessages.db"
+
 struct Node {
    char *data;
    struct Node *next;
@@ -24,15 +27,16 @@ void term_proc(int sigterm);
 void on_connect(struct mosquitto *mosq, void *obj, int rc);
 void on_message(struct mosquitto *mosq, void *obj, const struct mosquitto_message *msg);
 void remov_unvanted_character(char* string, char character);
-void get_topics(char *configfile, struct Node **head, struct Node *current);
-struct Config Get_values_from_config(char *configfile);
-void print_conf_values(char *configfile);
+void get_topics(struct Node **head, struct Node *current);
+struct Config Get_values_from_config();
+void print_conf_values();
 volatile sig_atomic_t deamonize = 1;
+sqlite3 *data_base = NULL;
 
 
 int main(void)
 {
-    char *configfile = "/etc/config/mqttconfig";
+    int errnum;
     int rc;
 	struct sigaction action;
     struct Config configdata;
@@ -46,31 +50,49 @@ int main(void)
 
 	action.sa_handler = term_proc;
 
-    get_topics(configfile, &head, current); 
+    get_topics(&head, current); 
     //testing
-    print_conf_values(configfile);
+    print_conf_values();
     mosq = mosquitto_new("subscribe-test", true, head);
 
-    configdata = Get_values_from_config(configfile);
+    configdata = Get_values_from_config();
+    if((configdata.address == NULL) || (configdata.port == NULL)){
+        goto endOfTheProgram;
+    }
     
     //log opening
     openlog("mqtt_app", LOG_PID, LOG_USER);
+    if (sqlite3_open(databasefile, &data_base) != 0){
+        printf("Failed to open databse\n");
+        syslog(LOG_ERR, "Failed to open databse\n");
+        goto endOfTheProgram;
+    }
+    else{
+        printf("Database opened\n");
+        printf("BAndymas\n");
+    }
 	mosquitto_lib_init();
 	mosquitto_connect_callback_set(mosq, on_connect);
 	mosquitto_message_callback_set(mosq, on_message);
 	mosquitto_username_pw_set(mosq, NULL, NULL); //Seting pass and username
-
 	rc = mosquitto_connect(mosq, configdata.address, atoi(configdata.port), 10);
 	if(rc) {
 		printf("Could not connect to Broker with return code %d\n", rc);
-		return -1;
+        syslog(LOG_ERR, "Could not connect to Broker with return code %d\n", rc);
+		goto endOfTheProgram;
 	}
-
     mosquitto_loop_start(mosq);
+    printf("Veikia1\n");
 	while(deamonize) {   
+        printf("Daemon working\n");
+        syslog(LOG_INFO, "Daemon working\n");
+        sleep(5);
 	}
-    
-    printf("Closing");
+    mosquitto_loop_stop(mosq, true);
+
+    endOfTheProgram:
+    printf("Closing\n");
+    //free memory
     //cleaning list
     while(head != NULL) { 
         free(head->data);                
@@ -78,41 +100,62 @@ int main(void)
         head = head->next;
         free (tmp);
     }
-    syslog(LOG_INFO, "Program closed"); //just for testing
+    syslog(LOG_INFO, "Program closed\n"); //just for testing
     mosquitto_disconnect(mosq);
 	mosquitto_destroy(mosq);
-    mosquitto_loop_stop(mosq, true);
 	mosquitto_lib_cleanup();
     free(configdata.port);
     free(configdata.address);
     free(configdata.ussername);
     free(configdata.password);
     free(configdata.tsl);
+    sqlite3_close(data_base);
     closelog();
-	return 0;
+	return rc;
 }
+///////////// Main end
 void term_proc(int sigterm) 
 {
 	deamonize = 0;
 }
 
-
 void on_connect(struct mosquitto *mosq, void *obj, int rc) {
     struct Node *ptr = obj;
+    printf("Connect\n");
 	if(rc) {
 		printf("Error with result code: %d\n", rc);
+        syslog(LOG_ERR, "Error with result code: %d\n", rc);
 	}
     else{
-    while(ptr->data != NULL) {
+        while(ptr->data != NULL) 
+        {
             printf("%s:\n", ptr->data);
             mosquitto_subscribe(mosq, NULL, ptr->data, 0);
             ptr = ptr->next;
-   }
-}
+        }
+    }
 }
 
 void on_message(struct mosquitto *mosq, void *obj, const struct mosquitto_message *msg) {
-	printf("New message with topic %s: %s\n", msg->topic, (char *) msg->payload);
+    char *errMSG = NULL;
+    const char *table_query = "CREATE TABLE Messages ( \ id integer primary key autoincrement not null,\ Topic varchar(250),\ Message varchar(250),\ Time timestamp default (datetime('now', 'localtime')) not null);";
+    char  *query;
+    sqlite3_exec(data_base, table_query, 0, NULL, errMSG);     //creates database table if there is none
+    if (errMSG != NULL)
+        syslog(LOG_WARNING ,"Failed to insert data into database\n"); 
+    query = sqlite3_mprintf("INSERT INTO Messages(Topic, Message) values ('%q', '%q');",(char *) msg->topic, (char *) msg->payload);
+    sqlite3_exec(data_base, query, 0, NULL, errMSG);
+    sqlite3_free(query);
+    if (errMSG != NULL){
+        printf("Failed to insert data into database\n");
+        syslog(LOG_ERR, "Failed to insert data into database\n");
+    }
+    else{
+        printf("Data was inserted: ");
+        syslog(LOG_ERR, "Data was inserted: ");
+        printf("New message with topic %s: %s\n", msg->topic, (char *) msg->payload);
+    }
+    
     //syslog(LOG_INFO, "New message with topic %s: %s\n", msg->topic, (char *) msg->payload);
 }
 //functions used to remove single quotes
@@ -126,7 +169,7 @@ void remov_unvanted_character(char* string, char character)
     string[j] = '\0';
 }
 
-void get_topics(char *configfile, struct Node **head, struct Node *current){
+void get_topics(struct Node **head, struct Node *current){
     FILE *fp;
     int errnum;
     char *pos = NULL;
@@ -161,9 +204,9 @@ void get_topics(char *configfile, struct Node **head, struct Node *current){
     }
 }
 
-struct Config Get_values_from_config(char *configfile){
+struct Config Get_values_from_config(){
     struct Config configdata;
-     FILE *fp;
+    FILE *fp;
     int errnum;
     char *pos = NULL;
     char line[128];
@@ -229,7 +272,7 @@ struct Config Get_values_from_config(char *configfile){
 }
 
 //just for testing at the end it need to be deleted
-void print_conf_values(char *configfile){
+void print_conf_values(){
     struct Config configdata;
     configdata = Get_values_from_config(configfile);
     printf("Data from configfile\n");
