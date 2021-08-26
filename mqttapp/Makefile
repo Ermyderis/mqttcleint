@@ -19,8 +19,12 @@ endef
 define Package/mqttapp/install
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_DIR) $(1)/log
+	$(INSTALL_DIR) $(1)/usr/share/mqttappcrt/
 	$(INSTALL_DIR) $(1)/etc/init.d
+	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_BIN) ./files/mqttapp.init $(1)/etc/init.d/mqttapp
+	$(INSTALL_BIN) ./files/mqttconfig.config $(1)/etc/config/mqttconfig.config
+	$(INSTALL_BIN) ./files/mosquitto.org.crt $(1)/usr/share/mqttappcrt/mosquitto.org.crt
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/mqttapp $(1)/usr/bin
 endef
 

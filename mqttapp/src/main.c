@@ -6,10 +6,11 @@
 #include <stdlib.h>
 #include <mosquitto.h>
 #include <sqlite3.h>
+#include "getvalues.h"
 
-#define configfile "/etc/config/mqttconfig"
+
 #define databasefile "/log/mqttmessages.db"
-#define CERTPATH ""
+#define crtfile "/usr/share/mqttappcrt/mosquitto.org.crt"
 
 struct Node {
    char *data;
@@ -26,10 +27,7 @@ struct Config{
 
 void on_connect(struct mosquitto *mosq, void *obj, int rc);
 void on_message(struct mosquitto *mosq, void *obj, const struct mosquitto_message *msg);
-void remov_unvanted_character(char* string, char character);
-void get_topics(struct Node **head, struct Node *current);
-struct Config Get_values_from_config();
-void print_conf_values();
+
 volatile int interrupt = 0;
 sqlite3 *data_base = NULL;
 
@@ -62,8 +60,7 @@ int main(void)
     sigaction(SIGTERM, &action, NULL);
 
     get_topics(&head, current); 
-    //testing
-    print_conf_values();
+   
 
     configdata = Get_values_from_config();
     if((configdata.address == NULL) || (configdata.port == NULL)){
@@ -72,6 +69,7 @@ int main(void)
     
     //log opening
     openlog("mqttapp", LOG_PID, LOG_USER);
+    //open database
     if (sqlite3_open(databasefile, &data_base) != 0){
         printf("Failed to open databse\n");
         syslog(LOG_ERR, "Failed to open databse\n");
@@ -80,6 +78,7 @@ int main(void)
     else{
         printf("Database opened\n");
     }
+    //Initialize mosquitto
 	rc = mosquitto_lib_init();
     if (rc != 0){
         syslog(LOG_ERR, "Failed to initialize mosquitto");
@@ -88,22 +87,14 @@ int main(void)
     else{
         syslog(LOG_INFO, "Mosquitto initialize");
     }
-    mosq = mosquitto_new("subscribe-test", true, head);
 
-      if(configdata.tsl != NULL){
-        printf("TSL/SSL ON\n");
+    mosq = mosquitto_new("subscribe-test", true, head);
+    //check if tsl not equal NULL and if pasw and usr fields are not empty
+    if(configdata.tsl != NULL){
         if(configdata.password != NULL && configdata.ussername != NULL){
                 if (mosquitto_username_pw_set(mosq, configdata.ussername ,configdata.password)==MOSQ_ERR_SUCCESS){
                 syslog(LOG_INFO, "User name and password added successfuly\n");
                 printf("User name and password added successfuly\n");
-                    if (!mosquitto_tls_set(mosq,CERTPATH,NULL, NULL, NULL, NULL)== MOSQ_ERR_SUCCESS){ 
-                        syslog(LOG_WARNING, "Failed to set tls"); 
-                        printf("Failed to set tls\n");
-                        goto endOfTheProgram;
-                    }
-                    else{
-                        printf("Tsl seted");
-                    }
             }else{
                 syslog(LOG_WARNING, "Failed to add username or password\n");
                 printf("Failed to add username or password\n");
@@ -116,10 +107,21 @@ int main(void)
         }
     }
 
-
-
+    //use tsl
+    if(configdata.tsl != NULL){
+        if (!mosquitto_tls_set(mosq,crtfile,NULL, NULL, NULL, NULL)== MOSQ_ERR_SUCCESS){ 
+                        syslog(LOG_WARNING, "Failed to set tls"); 
+                        printf("Failed to set tls\n");
+                    }
+        else{
+            syslog(LOG_INFO, "Tls seted"); 
+                        printf("Tls seted\n");
+        }
+    }
+    
 	mosquitto_connect_callback_set(mosq, on_connect);
 	mosquitto_message_callback_set(mosq, on_message);
+    //Conecting to broker
 	rc = mosquitto_connect(mosq, configdata.address, atoi(configdata.port), 10);
 	if(rc) {
 		printf("Could not connect to Broker with return code %d\n", rc);
@@ -143,7 +145,6 @@ int main(void)
         head = head->next;
         free (tmp);
     }
-    syslog(LOG_INFO, "Program closed\n"); //just for testing
     mosquitto_disconnect(mosq);
 	mosquitto_destroy(mosq);
 	mosquitto_lib_cleanup();
@@ -189,136 +190,7 @@ void on_message(struct mosquitto *mosq, void *obj, const struct mosquitto_messag
         printf("Failed to insert data into database\n");
         syslog(LOG_ERR, "Failed to insert data into database\n");
     }
-    else{
-        printf("Data was inserted: ");
-        syslog(LOG_ERR, "Data was inserted: ");
-        printf("New message with topic %s: %s\n", msg->topic, (char *) msg->payload);
-    }
     
     //syslog(LOG_INFO, "New message with topic %s: %s\n", msg->topic, (char *) msg->payload);
-}
-//functions used to remove single quotes
-void remov_unvanted_character(char* string, char character)
-{
-    int j, n = strlen(string);
-    for (int i = j = 0; i < n; i++)
-        if (string[i] != character)
-            string[j++] = string[i];
- 
-    string[j] = '\0';
-}
-
-void get_topics(struct Node **head, struct Node *current){
-    FILE *fp;
-    int errnum;
-    char *pos = NULL;
-    char line[128];
-    int linenum = 1;
-
-    fp = fopen(configfile, "r");
-    if(fp == NULL){
-        errnum = errno;
-        perror("Error: ");
-    }
-    else{
-        while(fgets(line, sizeof(line), fp) != NULL){
-            char firstColumn[256], secondColumn[256], thirdColumn[256];
-            linenum++;
-            if(sscanf(line, "%s%s%s", firstColumn, secondColumn, thirdColumn) != 3){
-                    //fprintf(fp, "\nSyntax error, line%d\n", linenum);
-            }
-            else{
-                pos = strstr(secondColumn, "topic");
-                if(pos != NULL){
-                struct Node *new = (struct Node *)malloc(sizeof(struct Node));
-                remov_unvanted_character(thirdColumn, '\'');
-                new->data = strdup(thirdColumn);
-                if(*head)
-                    new->next = *head;
-                *head = new;
-                }
-            }
-        }
-        fclose(fp);
-    }
-}
-
-struct Config Get_values_from_config(){
-    struct Config configdata;
-    FILE *fp;
-    int errnum;
-    char *pos = NULL;
-    char line[128];
-    int linenum = 1;
-    configdata.port = NULL;
-    configdata.address = NULL;
-    configdata.ussername = NULL;
-    configdata.password = NULL;
-    configdata.tsl = NULL;
-
-    fp = fopen(configfile, "r");
-    if(fp == NULL){
-        errnum = errno;
-        perror("Error: ");
-    }
-    else{
-        while(fgets(line, sizeof(line), fp) != NULL){
-            char firstColumn[256], secondColumn[256], thirdColumn[256];
-            linenum++;
-            if(sscanf(line, "%s%s%s", firstColumn, secondColumn, thirdColumn) != 3){
-                    //fprintf(fp, "\nSyntax error, line%d\n", linenum);
-            }
-            else{
-                pos = strstr(secondColumn, "port");
-                if(pos != NULL){
-     
-                    remov_unvanted_character(thirdColumn, '\'');
-                    configdata.port = strdup(thirdColumn); 
-                }
-                else{
-                    pos = strstr(secondColumn, "address");
-                    if(pos != NULL){
-                        remov_unvanted_character(thirdColumn, '\'');
-                        configdata.address = strdup(thirdColumn);  
-                    }
-                    else{
-                        pos = strstr(secondColumn, "username");
-                        if(pos != NULL){
-                            remov_unvanted_character(thirdColumn, '\'');
-                            configdata.ussername = strdup(thirdColumn);
-                        }
-                        else{
-                            pos = strstr(secondColumn, "password");
-                            if(pos != NULL){
-                                remov_unvanted_character(thirdColumn, '\'');
-                                configdata.password = strdup(thirdColumn);
-                            }
-                            else{
-                                pos = strstr(secondColumn, "enabletsl");
-                                if(pos != NULL){
-                                    remov_unvanted_character(thirdColumn, '\'');
-                                    configdata.tsl = strdup(thirdColumn);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        fclose(fp);
-    }
-    return configdata;
-}
-
-//just for testing at the end it need to be deleted
-void print_conf_values(){
-    struct Config configdata;
-    configdata = Get_values_from_config(configfile);
-    printf("Data from configfile\n");
-    printf("Port: %s\n", configdata.port);
-    printf("Address: %s\n", configdata.address);
-    printf("Username: %s\n", configdata.ussername);
-    printf("Password: %s\n", configdata.password);
-    printf("Tsl: %s\n", configdata.tsl);
 }
 
