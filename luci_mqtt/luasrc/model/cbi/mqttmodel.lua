@@ -7,10 +7,11 @@ m = Map("mqttconfig")
 section = m:section(NamedSection, "mqttconfigsct", "mqttconfig", "Subscribe info")
 
 flag = section:option(Flag, "enable", "Enable", "Enable program")
+tls_ssl = section:option(Flag, "enabletsl", "TSL_SSL", "Enable program use TSL_SSL")
 
 port = section:option( Value, "port", "Port")
 port.datatype = "string"
-port.placeholder = translate("1883")
+port.placeholder = translate("1883 if using TSL/SSL use 8883 port")
 
 
 address = section:option( Value, "address", "Address")
@@ -30,7 +31,6 @@ password.datatype = "credentials_validate"
 password.placeholder = translate("Password")
 
 
-tls_ssl = section:option(Flag, "enabletsl", "TSL_SSL", "Enable program use TSL_SSL")
 
 
 ---------------------------- Topic ----------------------------
