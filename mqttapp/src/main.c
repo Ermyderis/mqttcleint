@@ -6,14 +6,13 @@
 #include <stdlib.h>
 #include <mosquitto.h>
 #include <sqlite3.h>
-#include "getvalues.h"
-
+#include "getvaluesconfig.h"
 
 #define databasefile "/log/mqttmessages.db"
 #define crtfile "/usr/share/mqttappcrt/mosquitto.org.crt"
 
 struct Node {
-   char *data;
+   char *datatopics;
    struct Node *next;
 };
 
@@ -27,18 +26,10 @@ struct Config{
 
 void on_connect(struct mosquitto *mosq, void *obj, int rc);
 void on_message(struct mosquitto *mosq, void *obj, const struct mosquitto_message *msg);
+void signal_handler(int signo);
 
 volatile int interrupt = 0;
 sqlite3 *data_base = NULL;
-
-
-void signal_handler(int signo) {
-    signal(SIGINT, NULL);
-    syslog(LOG_INFO, "Received signal: %d", signo);
-    closelog();
-    interrupt = 1;
-}
-
 
 int main(void)
 {
@@ -47,11 +38,10 @@ int main(void)
 	struct sigaction action;
     struct Config configdata;
     struct mosquitto *mosq;
-    struct Node *tmp;
+    struct Node *temporarily;
     struct Node *head = NULL;
     struct Node *current = NULL;
 
-    
 	memset(&action, 0, sizeof(struct sigaction));
     memset(&configdata, 0, sizeof(struct Config));
 
@@ -59,21 +49,23 @@ int main(void)
     signal(SIGTERM, signal_handler);
     sigaction(SIGTERM, &action, NULL);
 
-    get_topics(&head, current); 
-   
-
-    configdata = Get_values_from_config();
-    if((configdata.address == NULL) || (configdata.port == NULL)){
-        goto endOfTheProgram;
-    }
-    
     //log opening
     openlog("mqttapp", LOG_PID, LOG_USER);
+
+    get_topics_from_config(&head, current); 
+    configdata = get_values_from_config();
+    //and luci check if values not null
+    if((configdata.address == NULL) || (configdata.port == NULL)){
+        syslog(LOG_ERR, "Port or address empty\n");
+        printf("Port or address empty\n");
+        goto portOrAddresEmpty;
+    }
+    
     //open database
     if (sqlite3_open(databasefile, &data_base) != 0){
         printf("Failed to open databse\n");
         syslog(LOG_ERR, "Failed to open databse\n");
-        goto endOfTheProgram;
+        goto dataBaseNotCreated;
     }
     else{
         printf("Database opened\n");
@@ -96,7 +88,7 @@ int main(void)
                 syslog(LOG_INFO, "User name and password added successfuly\n");
                 printf("User name and password added successfuly\n");
             }else{
-                syslog(LOG_WARNING, "Failed to add username or password\n");
+                syslog(LOG_ERR, "Failed to add username or password\n");
                 printf("Failed to add username or password\n");
                 goto endOfTheProgram;
             }
@@ -106,16 +98,15 @@ int main(void)
             goto endOfTheProgram;
         }
     }
-
     //use tsl
     if(configdata.tsl != NULL){
         if (!mosquitto_tls_set(mosq,crtfile,NULL, NULL, NULL, NULL)== MOSQ_ERR_SUCCESS){ 
-                        syslog(LOG_WARNING, "Failed to set tls"); 
+                        syslog(LOG_ERR, "Failed to set tls"); 
                         printf("Failed to set tls\n");
                     }
         else{
-            syslog(LOG_INFO, "Tls seted"); 
-                        printf("Tls seted\n");
+            syslog(LOG_INFO, "Tls seted\n"); 
+            printf("Tls seted\n");
         }
     }
     
@@ -129,31 +120,34 @@ int main(void)
 		goto endOfTheProgram;
 	}
     mosquitto_loop_start(mosq);
+    syslog(LOG_INFO, "Working\n");
+    printf("Working\n");
+    //Program won't shut down while interupt = 1
 	while(!interrupt) {   
-        
 	}
-    printf("Closing\n");
-    mosquitto_loop_stop(mosq, true);
 
+    mosquitto_loop_stop(mosq, true);
     endOfTheProgram:
-    printf("Closing\n");
-    //free memory
-    //cleaning list
-    while(head != NULL) { 
-        free(head->data);                
-        tmp= head;
-        head = head->next;
-        free (tmp);
-    }
+    //Disconecting
     mosquitto_disconnect(mosq);
 	mosquitto_destroy(mosq);
 	mosquitto_lib_cleanup();
+    dataBaseNotCreated:
+    sqlite3_close(data_base);
+    portOrAddresEmpty:
+    //cleaning list  
+    while(head != NULL) { 
+        free(head->datatopics);                
+        temporarily= head;
+        head = head->next;
+        free (temporarily);
+    }
+    //free memory
     free(configdata.port);
     free(configdata.address);
     free(configdata.ussername);
     free(configdata.password);
     free(configdata.tsl);
-    sqlite3_close(data_base);
     closelog();
 	return rc;
 }
@@ -167,10 +161,10 @@ void on_connect(struct mosquitto *mosq, void *obj, int rc) {
         syslog(LOG_ERR, "Error with result code: %d\n", rc);
 	}
     else{
-        while(ptr->data != NULL) 
+        while(ptr->datatopics != NULL) 
         {
-            printf("%s:\n", ptr->data);
-            mosquitto_subscribe(mosq, NULL, ptr->data, 0);
+            printf("%s:\n", ptr->datatopics);
+            mosquitto_subscribe(mosq, NULL, ptr->datatopics, 0);
             ptr = ptr->next;
         }
     }
@@ -180,7 +174,7 @@ void on_message(struct mosquitto *mosq, void *obj, const struct mosquitto_messag
     char *errMSG = NULL;
     const char *table_query = "CREATE TABLE Messages ( \ id integer primary key autoincrement not null,\ Topic varchar(250),\ Message varchar(250),\ Time timestamp default (datetime('now', 'localtime')) not null);";
     char  *query;
-    sqlite3_exec(data_base, table_query, 0, NULL, errMSG);     //creates database table if there is none
+    sqlite3_exec(data_base, table_query, 0, NULL, errMSG);     //create database table 
     if (errMSG != NULL)
         syslog(LOG_WARNING ,"Failed to insert data into database\n"); 
     query = sqlite3_mprintf("INSERT INTO Messages(Topic, Message) values ('%q', '%q');",(char *) msg->topic, (char *) msg->payload);
@@ -190,7 +184,12 @@ void on_message(struct mosquitto *mosq, void *obj, const struct mosquitto_messag
         printf("Failed to insert data into database\n");
         syslog(LOG_ERR, "Failed to insert data into database\n");
     }
-    
-    //syslog(LOG_INFO, "New message with topic %s: %s\n", msg->topic, (char *) msg->payload);
+}
+
+void signal_handler(int signo) {
+    signal(SIGINT, NULL);
+    syslog(LOG_INFO, "Received signal: %d", signo);
+    closelog();
+    interrupt = 1;
 }
 
