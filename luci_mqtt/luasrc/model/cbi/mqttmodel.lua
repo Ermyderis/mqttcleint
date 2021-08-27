@@ -12,10 +12,12 @@ tls_ssl = section:option(Flag, "enabletsl", "TSL_SSL", "Enable program use TSL_S
 port = section:option( Value, "port", "Port")
 port.datatype = "string"
 port.placeholder = translate("1883 if using TSL/SSL use 8883 port")
+port.rmempty = false
 
 
 address = section:option( Value, "address", "Address")
 address.datatype = [[ maxlength(100), "string"]]
+address.rmempty = false
 
 
 
