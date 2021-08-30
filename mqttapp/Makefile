@@ -9,7 +9,7 @@ include $(INCLUDE_DIR)/package.mk
 define Package/mqttapp
 	CATEGORY:=Base system
 	TITLE:=mqttapp
-	DEPENDS:=+libmosquitto +libsqlite3
+	DEPENDS:=+libmosquitto +libsqlite3 +libuci
 endef
 
 define Package/mqttapp/description

@@ -1,3 +1,2 @@
-void get_topics_from_config(struct Node **head, struct Node *current);
-struct Config get_values_from_config();
-void remov_unvanted_character(char* string, char character);
+void signal_handler(int signo);
+int uci_read_config_data(struct Node **head, struct Node *current, struct Config *configdata);
