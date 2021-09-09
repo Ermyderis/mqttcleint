@@ -6,22 +6,13 @@
 #include <stdlib.h>
 #include <mosquitto.h>
 #include <sqlite3.h>
+#include <json-c/json.h>
+
 #include "getvaluesconfig.h"
 #include "database.h"
 #include "usr_pasw_tsl.h"
+#include "curl_send_message.h"
 
-struct Node {
-   char *datatopics;
-   struct Node *next;
-};
-
-struct Config{
-    char *port;
-    char *address;
-    char *ussername;
-    char *password;
-    char *tsl;
-};
 
 
 
@@ -35,7 +26,7 @@ void on_connect(struct mosquitto *mosq, void *obj, int rc) {
         syslog(LOG_ERR, "Error with result code: %d\n", rc);
 	}
     else{
-        while(ptr->datatopics != NULL) 
+        while(ptr != NULL) 
         {
             printf("%s:\n", ptr->datatopics);
             mosquitto_subscribe(mosq, NULL, ptr->datatopics, 0);
@@ -58,4 +49,13 @@ void on_message(struct mosquitto *mosq, void *obj, const struct mosquitto_messag
         printf("Failed to insert data into database\n");
         syslog(LOG_ERR, "Failed to insert data into database\n");
     }
+
+    if (json_tokener_parse(msg->payload) == NULL){
+    }
+    else{
+        printf("Topic: %s, Message: %s \n",msg->topic, msg->payload);
+        curl_send_message(obj, (char *) msg->topic, (char *) msg->payload);
+    }
+    
+    
 }

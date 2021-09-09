@@ -11,10 +11,19 @@
 
 #define CONFIGFILE "/etc/config/mqttconfig"
 
+struct Case{
+    char *casetopic;
+    char *casekey;
+    char *casetype;
+    char *casevalue;
+    char *casecomparisontype;
+    struct Case *next;
+};
 
 struct Node {
-   char *datatopics;
-   struct Node *next;
+    char *datatopics;
+    struct Case *chead;
+    struct Node *next;
 };
 
 struct Config{
@@ -26,6 +35,8 @@ struct Config{
 };
 
 
+
+
 volatile int interrupt = 0;
 
 void signal_handler(int signo) {
@@ -35,7 +46,7 @@ void signal_handler(int signo) {
     interrupt = 1;
 }
 
-int uci_read_config_data(struct Node **head, struct Node *current, struct Config *configdata){
+int uci_read_config_data(struct Node **head, struct Config *configdata){
     int rc = 0;
     struct uci_element *element = NULL;
     struct uci_package *package = NULL;
@@ -82,11 +93,40 @@ int uci_read_config_data(struct Node **head, struct Node *current, struct Config
             char *topic =(char*)uci_lookup_option_string(ctx, section, "topic");
             struct Node *new = (struct Node *)malloc(sizeof(struct Node));
             new->datatopics = strdup(topic);
-            if(*head)
-                new->next = *head;
+            new->chead = NULL;
+            new->next = *head;
             *head = new;
         }
+        if (strcmp(section->type, "case") == 0) {
+
+            struct Node *ptr = *head;
+            char *casetopic =(char*)uci_lookup_option_string(ctx, section, "topics");
+            char *casekey =(char*)uci_lookup_option_string(ctx, section, "key");
+            char *casetype =(char*)uci_lookup_option_string(ctx, section, "type");
+            char *casevalue =(char*)uci_lookup_option_string(ctx, section, "value");
+            char *casecomparisontype =(char*)uci_lookup_option_string(ctx, section, "comparisonType");
+            while (ptr != NULL){
+                if(strcmp(ptr->datatopics, casetopic) == 0){
+                    struct Case *new = (struct Case *)malloc(sizeof(struct Case));
+                    new->casetopic = strdup(casetopic);
+                    new->casekey = strdup(casekey);
+                    new->casetype = strdup(casetype);
+                    new->casevalue = strdup(casevalue);
+                    new->casecomparisontype = strdup(casecomparisontype);
+                    
+                    new->casetopic = ptr->datatopics;
+                    new->next = ptr->chead;
+                    ptr->chead = new;
+                    
+                }
+            ptr = ptr->next;
+
+        }
+
+        }
     }
+
+
 
 delete:
     uci_free_context(ctx);

@@ -10,18 +10,6 @@
 
 #define CRTFILE "/usr/share/mqttappcrt/mosquitto.org.crt"
 
-struct Node {
-   char *datatopics;
-   struct Node *next;
-};
-
-struct Config{
-    char *port;
-    char *address;
-    char *ussername;
-    char *password;
-    char *tsl;
-};
 
 int set_ussername_password_tsl(struct mosquitto *mosq, struct Config *configdata){
     int rc = 0;

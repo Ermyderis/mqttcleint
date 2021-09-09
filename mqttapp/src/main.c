@@ -13,19 +13,6 @@
 #include "on_connectmesages.h"
 
 
-struct Node {
-   char *datatopics;
-   struct Node *next;
-};
-
-struct Config{
-    char *port;
-    char *address;
-    char *ussername;
-    char *password;
-    char *tsl;
-};
-
 volatile int interrupt;
 sqlite3 *data_base;
 
@@ -40,7 +27,6 @@ int main(void)
     struct mosquitto *mosq;
     struct Node *temporarily;
     struct Node *head = NULL;
-    struct Node *current = NULL;
 
 	memset(&action, 0, sizeof(struct sigaction));
     memset(&configdata, 0, sizeof(struct Config));
@@ -51,12 +37,11 @@ int main(void)
 
     //log opening
     openlog("mqttapp", LOG_PID, LOG_USER);
-
-    rc = uci_read_config_data(&head, current, &configdata); 
+    rc = uci_read_config_data(&head, &configdata); 
     if(rc == -1){
         goto logclose;
     }
-    
+
     rc = database_and_initialize_mosquitto();
     if (rc == -1){
         goto dataBaseNotCreated;
@@ -85,6 +70,7 @@ int main(void)
     printf("Working\n");
     //Program won't shut down while interupt = 1
 	while(!interrupt) {   
+        
 	}
 
     mosquitto_loop_stop(mosq, true);

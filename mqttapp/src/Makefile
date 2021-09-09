@@ -1,5 +1,5 @@
 BIN:=mqttapp
-LDFLAGS:=-lmosquitto -lsqlite3 -luci
+LDFLAGS:=-lmosquitto -lsqlite3 -luci -lcurl -ljson-c
 CPPFLAGS:=-I$(CURDIR)
 SRC:=$(wildcard *.c)
 OBJS:=$(SRC:.c=.o)
